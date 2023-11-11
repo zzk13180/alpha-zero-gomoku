@@ -1,0 +1,86 @@
+name: Train AlphaZero Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Training mode (fast/full)'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - fast
+        - full
+      init_model:
+        description: 'Path or URL to initial model (.pth) to resume training'
+        required: false
+        type: string
+  # push:
+  #   branches: [ "main" ]
+  #   paths:
+  #     - 'scripts/**'
+  #     - 'game/**'
+  #     - 'model/**'
+  #     - '.github/workflows/train_model.yml'
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Ensure outputs directory exists
+      run: mkdir -p outputs
+
+    - name: Download Initial Model
+      if: ${{ inputs.init_model != '' }}
+      id: download-model
+      run: |
+        INIT_MODEL="${{ inputs.init_model }}"
+        if [[ "$INIT_MODEL" =~ ^https?:// ]]; then
+          echo "Detected URL for init_model. Downloading..."
+          # Save as a fixed filename to ensure it's in the correct place
+          curl -L -o "outputs/resumed_model.pth" "$INIT_MODEL"
+          echo "model_path=outputs/resumed_model.pth" >> $GITHUB_OUTPUT
+        else
+          echo "Using provided path..."
+          echo "model_path=$INIT_MODEL" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run Training
+      run: |
+        MODE="${{ inputs.mode || 'full' }}"
+        echo "Starting training in $MODE mode..."
+        
+        CMD="python -m scripts.train --mode $MODE"
+        
+        if [[ -n "${{ inputs.init_model }}" ]]; then
+           MODEL_PATH="${{ steps.download-model.outputs.model_path }}"
+           echo "Resuming from model: $MODEL_PATH"
+           CMD="$CMD --model $MODEL_PATH"
+        fi
+        
+        echo "Executing: $CMD"
+        $CMD
+
+    - name: Upload Model Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: alpha-zero-models-${{ inputs.mode || 'full' }}
+        path: outputs/*.pth
+        retention-days: 10
