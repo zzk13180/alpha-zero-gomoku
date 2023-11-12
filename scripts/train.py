@@ -71,13 +71,14 @@ class Trainer:
         kl_targ: KL散度目标值，用于自适应调整学习率
     """
 
-    def __init__(self, model_file=None, mode="fast"):
+    def __init__(self, model_file=None, mode="fast", start_epoch=0):
         # ===== 加载训练配置 =====
         if mode not in TRAIN_CONFIGS:
             raise ValueError(f"未知模式: {mode}, 可选: {list(TRAIN_CONFIGS.keys())}")
 
         config = TRAIN_CONFIGS[mode]
         self.mode = mode
+        self.start_epoch = start_epoch
 
         # ===== 棋盘设置 =====
         self.board_width = config["board_width"]
@@ -203,7 +204,7 @@ class Trainer:
         print("-" * 50)
 
         try:
-            for i in range(self.game_batch_num):
+            for i in range(self.start_epoch, self.game_batch_num):
                 # 1. 自我对弈收集数据
                 self.collect_selfplay_data(1)
                 print(
@@ -247,6 +248,7 @@ def parse_args():
         help="训练模式: fast(快速验证) 或 full(完整训练)",
     )
     parser.add_argument("--model", type=str, default=None, help="加载已有模型继续训练（可选）")
+    parser.add_argument("--start-epoch", type=int, default=0, help="起始训练轮数（用于恢复训练）")
     return parser.parse_args()
 
 
@@ -255,5 +257,5 @@ if __name__ == "__main__":
     print(f"\n选择模式: {args.mode}")
     print(f"模式说明: {TRAIN_CONFIGS[args.mode]['description']}\n")
 
-    trainer = Trainer(model_file=args.model, mode=args.mode)
+    trainer = Trainer(model_file=args.model, mode=args.mode, start_epoch=args.start_epoch)
     trainer.run()

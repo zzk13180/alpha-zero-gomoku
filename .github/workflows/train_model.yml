@@ -15,6 +15,11 @@ on:
         description: 'Path or URL to initial model (.pth) to resume training'
         required: false
         type: string
+      start_epoch:
+        description: 'Start epoch number (for resuming, e.g., 400)'
+        required: false
+        default: '0'
+        type: string
   # push:
   #   branches: [ "main" ]
   #   paths:
@@ -64,9 +69,10 @@ jobs:
     - name: Run Training
       run: |
         MODE="${{ inputs.mode || 'full' }}"
-        echo "Starting training in $MODE mode..."
+        START_EPOCH="${{ inputs.start_epoch || '0' }}"
+        echo "Starting training in $MODE mode from epoch $START_EPOCH..."
         
-        CMD="python -m scripts.train --mode $MODE"
+        CMD="python -m scripts.train --mode $MODE --start-epoch $START_EPOCH"
         
         if [[ -n "${{ inputs.init_model }}" ]]; then
            MODEL_PATH="${{ steps.download-model.outputs.model_path }}"

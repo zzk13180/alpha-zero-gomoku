@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alpha Zero Gomoku</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>AlphaZero<br>GOMOKU</h1>
+        
+        <div class="game-info">
+            <div class="status" id="status">PRESS START</div>
+            <div class="controls">
+                <button id="startBtn" class="btn">START</button>
+                <button id="resetBtn" class="btn">RESET</button>
+                <button id="undoBtn" class="btn">UNDO</button>
+            </div>
+            <div class="settings">
+                <label>
+                    LEVEL:
+                    <select id="aiLevel">
+                        <option value="100">EASY</option>
+                        <option value="400" selected>NORMAL</option>
+                        <option value="800">HARD</option>
+                        <option value="1600">MASTER</option>
+                    </select>
+                </label>
+                <label class="checkbox-wrapper">
+                    <input type="checkbox" id="aiFirst" />
+                    <span class="checkmark"></span>
+                    AI FIRST
+                </label>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="loading-text">LOADING SYSTEM...</div>
+        </div>
+
+        <div class="board-wrapper">
+            <canvas id="board" width="600" height="600"></canvas>
+        </div>
+
+        <div class="info-panel">
+            <div class="thinking" id="thinking" style="display: none;">
+                <span>AI IS THINKING<span class="dots">...</span></span>
+            </div>
+            <div class="moves-history">
+                <h3>BATTLE LOG</h3>
+                <div id="history"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="root"></div>
+    <script type="module" src="/src/game.js"></script>
+</body>
+</html>

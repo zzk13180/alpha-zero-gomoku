@@ -1,0 +1,17 @@
+{
+  "name": "alpha-zero-gomoku-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.16.2"
+  }
+}
