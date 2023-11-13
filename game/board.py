@@ -26,12 +26,16 @@ class Board:
         if self.states:
             moves, players = np.array(list(zip(*self.states.items(), strict=True)))
             curr_moves = moves[players == self.current_player]
+            # 当前玩家棋子位置
             state[0][curr_moves // self.width, curr_moves % self.width] = 1.0
             oppo_moves = moves[players != self.current_player]
+            # 对手棋子位置
             state[1][oppo_moves // self.width, oppo_moves % self.width] = 1.0
+            # 最后落子位置
             state[2][self.last_move // self.width, self.last_move % self.width] = 1.0
 
         if len(self.states) % 2 == 0:
+            # 先手标记（先手回合全1，后手回合全0）
             state[3][:, :] = 1.0
 
         return state[:, ::-1, :]

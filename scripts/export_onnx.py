@@ -1,7 +1,7 @@
+import argparse
 import os
 import sys
 
-import numpy as np
 import torch
 
 # 将项目根目录添加到 python path
@@ -12,12 +12,23 @@ sys.path.append(project_root)
 # noqa: E402
 from model.net import PolicyValueNet
 
+# 模式配置
+MODE_CONFIG = {
+    "fast": {"width": 9, "height": 9, "model": "model_fast_final.pth"},
+    "full": {"width": 15, "height": 15, "model": "model_full_final.pth"},
+}
 
-def export():
-    # Model trained on 9x9 board according to state dict mismatch
-    width = 9
-    height = 9
-    model_path = os.path.join(project_root, "outputs", "model_fast_final.pth")
+
+def export(mode: str, model_file: str | None = None):
+    if mode not in MODE_CONFIG:
+        print(f"Error: Unknown mode '{mode}'. Choose from: {list(MODE_CONFIG.keys())}")
+        return
+
+    config = MODE_CONFIG[mode]
+    width = config["width"]
+    height = config["height"]
+    model_name = model_file if model_file else config["model"]
+    model_path = os.path.join(project_root, "outputs", model_name)
 
     device = torch.device("cpu")
     model = PolicyValueNet(width, height)
@@ -43,17 +54,18 @@ def export():
     dummy_input = torch.randn(1, 4, height, width, device=device)
 
     # 输出路径
-    output_dir = os.path.join(project_root, "web")
+    output_dir = os.path.join(project_root, "public")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    output_path = os.path.join(output_dir, "model.onnx")
+    output_name = f"model_{mode}.onnx"
+    output_path = os.path.join(output_dir, output_name)
 
     print("Exporting to ONNX...")
     # 强制将权重保存到单个 ONNX 文件中，避免生成 external data
     # 对于小模型（<2GB），这通常是更好的选择，特别是 web 环境
     torch.onnx.export(
         model,
-        dummy_input,
+        (dummy_input,),
         output_path,
         input_names=["input"],
         output_names=["log_probs", "value"],
@@ -95,4 +107,19 @@ def export():
 
 
 if __name__ == "__main__":
-    export()
+    parser = argparse.ArgumentParser(description="Export PyTorch model to ONNX format")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="fast",
+        choices=["fast", "full"],
+        help="Model mode: 'fast' (9x9) or 'full' (15x15). Default: fast",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model filename in outputs/ directory (e.g., model_fast_100.pth)",
+    )
+    args = parser.parse_args()
+    export(args.mode, args.model)

@@ -87,6 +87,39 @@ python -m scripts.evaluate_models model_fast_50.pth model_fast_final.pth
 *   `-p`: MCTS simulations per move (default 400)
 *   `-s`: Board size (default 9)
 
+### 4. Export Model via ONNX
+
+Export the trained PyTorch model to ONNX format for web deployment.
+
+```bash
+# Export fast mode model (9x9) to public/model_fast.onnx
+python -m scripts.export_onnx
+
+# Export full mode model (15x15) to public/model_full.onnx
+python -m scripts.export_onnx --mode full
+
+# Specify a custom model file
+python -m scripts.export_onnx --mode fast --model model_fast_100.pth
+```
+
+### 5. Web Interface
+
+Play against the AI directly in your browser using ONNX Runtime Web.
+
+**Prerequisites**: Node.js and npm (or pnpm).
+
+1. **Install dependencies**:
+   ```bash
+   npm install
+   # or
+   pnpm install
+   ```
+2. **Start the development server**:
+   ```bash
+   npm run dev
+   ```
+3. Open the link shown in the terminal (usually `http://localhost:5173`) to start playing.
+
 ## Project Structure
 
 ```
@@ -101,7 +134,10 @@ alpha-zero-gomoku/
 ├── scripts/               # Execution scripts
 │   ├── train.py           # Training entry point
 │   ├── human_play.py      # Human vs AI entry point
-│   └── evaluate_models.py # Model evaluation
+│   ├── evaluate_models.py # Model evaluation
+│   └── export_onnx.py     # Export model to ONNX
+├── src/                   # Web frontend source
+├── public/                # Web static assets
 ├── outputs/               # Training outputs (auto-generated)
 │   └── *.pth              # Saved model files
 ├── pyproject.toml         # Project config + Ruff linting rules

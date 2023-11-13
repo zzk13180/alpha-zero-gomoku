@@ -17,8 +17,8 @@ function loadScript(src) {
 
 class GomokuGame {
     constructor() {
-        // 模型是 9x9 训练的
-        this.boardSize = 9;
+        // 默认棋盘大小，会根据加载的模型动态调整
+        this.boardSize = 15;
         this.cellSize = 40;
         this.board = [];
         this.history = [];
@@ -27,6 +27,8 @@ class GomokuGame {
         this.aiThinking = false;
         this.pyodideReady = false;
         this.ortSession = null;
+        this.modelMode = null; // 'full' or 'fast'
+        this.playerPiece = 1; // 玩家在 Python 端的棋子编号（1=先手黑，2=后手白）
         
         this.canvas = document.getElementById('board');
         this.ctx = this.canvas.getContext('2d');
@@ -79,7 +81,7 @@ class GomokuGame {
         try {
             // 1. 初始化 Pyodide 和 ONNX Runtime
             // 为了保证全局变量存在，这里手动加载 CDN (Vite 开发环境下)
-            statusDiv.textContent = 'LOADING LIBRARIES...';
+            statusDiv.textContent = '加载程序库...';
             // 检查全局变量是否已存在
             if (!window.loadPyodide) {
                 await loadScript('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
@@ -88,20 +90,39 @@ class GomokuGame {
                 await loadScript('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
             }
 
-            statusDiv.textContent = 'SYSTEM INITIALIZING...';
+            statusDiv.textContent = '系统初始化中...';
             window.pyodide = await loadPyodide({
                 indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
             });
             
-            statusDiv.textContent = 'INSTALLING DEPENDENCIES...';
+            statusDiv.textContent = '安装依赖项...';
             await pyodide.loadPackage(['numpy', 'micropip']);
             
             // 2. 加载 ONNX 模型
-            statusDiv.textContent = 'LOADING NEURAL NETWORK...';
+            statusDiv.textContent = '加载神经网络...';
             // 注意：Vite 把 public 下的文件直接放在根路径
-            this.ortSession = await ort.InferenceSession.create('/model.onnx');
+            // 默认加载 fast 模式 (9x9)，这是演示主要使用的模型
+            try {
+                this.ortSession = await ort.InferenceSession.create('model_fast.onnx');
+                this.boardSize = 9;
+                this.modelMode = 'fast';
+                console.log('Loaded fast model (9x9)');
+            } catch (e) {
+                console.log('Fast model not found, trying full model...');
+                this.ortSession = await ort.InferenceSession.create('model_full.onnx');
+                this.boardSize = 15;
+                this.modelMode = 'full';
+                console.log('Loaded full model (15x15)');
+            }
+            
+            // 根据加载的模型调整画布大小
+            this.canvas.width = this.cellSize * (this.boardSize + 1);
+            this.canvas.height = this.cellSize * (this.boardSize + 1);
+            this.initBoard();
+            this.drawBoard();
             
             // 3. 暴露预测函数给 Python
+            const boardSize = this.boardSize;
             window.predict = async (flatData) => {
                 let inputData;
                 if (flatData.toJs) {
@@ -110,7 +131,7 @@ class GomokuGame {
                     inputData = flatData;
                 }
                 
-                const tensor = new ort.Tensor('float32', inputData, [1, 4, 9, 9]);
+                const tensor = new ort.Tensor('float32', inputData, [1, 4, boardSize, boardSize]);
                 const feeds = { input: tensor };
                 
                 const results = await this.ortSession.run(feeds);
@@ -119,17 +140,17 @@ class GomokuGame {
                 return [results.log_probs.data, results.value.data[0]];
             };
 
-            statusDiv.textContent = 'COMPILING LOGIC...';
+            statusDiv.textContent = '编译游戏逻辑...';
             await this.loadPythonCode();
             
             this.pyodideReady = true;
             loadingDiv.style.display = 'none';
-            statusDiv.textContent = 'READY. PRESS START.';
+            statusDiv.textContent = '就绪！点击开始游戏';
             document.getElementById('startBtn').disabled = false;
             
         } catch (error) {
             console.error('初始化失败:', error);
-            statusDiv.textContent = 'INIT FAILED: ' + error.message;
+            statusDiv.textContent = '初始化失败: ' + error.message;
             loadingDiv.style.display = 'none';
         }
     }
@@ -143,7 +164,7 @@ class GomokuGame {
 
     async startGame() {
         if (!this.pyodideReady) {
-            alert('SYSTEM NOT READY');
+            alert('系统尚未就绪');
             return;
         }
 
@@ -158,12 +179,16 @@ class GomokuGame {
         const aiFirst = document.getElementById('aiFirst').checked;
         
         if (aiFirst) {
+            // AI 先手：AI 是 Python 端的 player 1，玩家是 player 2
+            this.playerPiece = 2;
             this.currentPlayer = 2;
-            this.updateStatus('AI TURN (WHITE)');
+            this.updateStatus('AI 回合（黑棋）');
             setTimeout(() => this.aiMove(), 500);
         } else {
+            // 玩家先手：玩家是 Python 端的 player 1，AI 是 player 2
+            this.playerPiece = 1;
             this.currentPlayer = 1;
-            this.updateStatus('YOUR TURN (BLACK)');
+            this.updateStatus('你的回合（黑棋）');
         }
     }
 
@@ -175,7 +200,7 @@ class GomokuGame {
         document.getElementById('startBtn').disabled = false;
         document.getElementById('history').innerHTML = '';
         document.getElementById('thinking').style.display = 'none';
-        this.updateStatus('PRESS START TO PLAY');
+        this.updateStatus('点击开始游戏');
     }
 
     handleClick(e) {
@@ -222,13 +247,13 @@ class GomokuGame {
         if (this.currentPlayer === 2) {
             setTimeout(() => this.aiMove(), 100);
         } else {
-            this.updateStatus('YOUR TURN (BLACK)');
+            this.updateStatus('你的回合（黑棋）');
         }
     }
 
     async aiMove() {
         this.aiThinking = true;
-        this.updateStatus('AI IS THINKING...');
+        this.updateStatus('AI 思考中...');
         document.getElementById('thinking').style.display = 'flex';
         this.canvas.classList.add('disabled');
 
@@ -242,11 +267,11 @@ class GomokuGame {
                 await this.makeMove(row, col, 2);
             } else {
                 console.error("AI returned invalid move:", move);
-                this.updateStatus('AI ERROR');
+                this.updateStatus('AI 出错');
             }
         } catch (error) {
             console.error('AI Move failed:', error);
-            this.updateStatus('SYSTEM ERROR');
+            this.updateStatus('系统错误');
         } finally {
             this.aiThinking = false;
             document.getElementById('thinking').style.display = 'none';
@@ -258,12 +283,14 @@ class GomokuGame {
         this.gameStarted = false;
         document.getElementById('startBtn').disabled = false;
         
-        if (winner === 1) {
-            this.updateStatus('YOU WIN!');
-        } else if (winner === 2) {
-            this.updateStatus('GAME OVER. AI WINS.');
+        // winner 是 Python 端返回的玩家编号 (1 或 2)
+        // 需要根据 playerPiece 来判断是玩家还是 AI 获胜
+        if (winner === this.playerPiece) {
+            this.updateStatus('🎉 恭喜你获胜！');
+        } else if (winner === -1) {
+            this.updateStatus('🤝 平局');
         } else {
-            this.updateStatus('DRAW GAME.');
+            this.updateStatus('😔 AI 获胜，再接再厉！');
         }
     }
 
@@ -289,7 +316,7 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
         this.drawBoard();
         this.updateHistory();
         this.currentPlayer = 1;
-        this.updateStatus('YOUR TURN (BLACK)');
+        this.updateStatus('你的回合（黑棋）');
     }
 
     drawBoard() {
@@ -378,12 +405,12 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
     addMoveToHistory(row, col, player) {
         const history = document.getElementById('history');
         const moveNum = this.history.length;
-        const playerName = player === 1 ? 'PLAYER' : 'AI';
-        const color = player === 1 ? 'BLK' : 'WHT';
+        const playerName = player === 1 ? '玩家' : 'AI';
+        const color = player === 1 ? '黑' : '白';
         
         const moveItem = document.createElement('div');
         moveItem.className = `move-item ${player === 1 ? 'player' : 'ai'}`;
-        moveItem.textContent = `${moveNum}. ${playerName}(${color}): (${row}, ${col})`;
+        moveItem.textContent = `第${moveNum}步 ${playerName}(${color}): (${row}, ${col})`;
         
         history.appendChild(moveItem);
         history.scrollTop = history.scrollHeight;
@@ -394,12 +421,12 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
         history.innerHTML = '';
         
         this.history.forEach((move, index) => {
-            const playerName = move.player === 1 ? 'PLAYER' : 'AI';
-            const color = move.player === 1 ? 'BLK' : 'WHT';
+            const playerName = move.player === 1 ? '玩家' : 'AI';
+            const color = move.player === 1 ? '黑' : '白';
             
             const moveItem = document.createElement('div');
             moveItem.className = `move-item ${move.player === 1 ? 'player' : 'ai'}`;
-            moveItem.textContent = `${index + 1}. ${playerName}(${color}): (${move.row}, ${move.col})`;
+            moveItem.textContent = `第${index + 1}步 ${playerName}(${color}): (${move.row}, ${move.col})`;
             
             history.appendChild(moveItem);
         });

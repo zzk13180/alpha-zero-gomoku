@@ -49,6 +49,7 @@ class PolicyValueNet(nn.Module):
 
     def forward(self, x):
         """前向传播"""
+        # 共享特征提取：通过三层卷积提取棋盘特征
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
@@ -56,11 +57,13 @@ class PolicyValueNet(nn.Module):
         # x = F.relu(self.bn2(self.conv2(x)))
         # x = F.relu(self.bn3(self.conv3(x)))
 
+        # 策略头：计算每个位置的落子概率
         p = F.relu(self.policy_conv(x))
         # p = F.relu(self.policy_bn(self.policy_conv(x)))
         p = p.view(-1, 4 * self.board_width * self.board_height)
         log_probs = F.log_softmax(self.policy_fc(p), dim=1)
 
+        # 价值头：评估当前局面的价值
         v = F.relu(self.value_conv(x))
         # v = F.relu(self.value_bn(self.value_conv(x)))
         v = v.view(-1, 2 * self.board_width * self.board_height)

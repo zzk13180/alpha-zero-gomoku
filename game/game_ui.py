@@ -16,8 +16,11 @@ class Game:
 
         while True:
             move, move_probs = player.get_action(self.board, temp=temp, return_prob=True)
+            # 存储每次落子前的棋盘状态
             states.append(self.board.current_state())
+            # 存储每次 MCTS 计算的动作概率分布
             mcts_probs.append(move_probs)
+            # 存储每次落子时的当前玩家
             current_players.append(self.board.current_player)
             self.board.do_move(move)
 

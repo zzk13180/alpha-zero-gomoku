@@ -3,56 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alpha Zero Gomoku</title>
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <title>AlphaZero 五子棋</title>
 </head>
 <body>
-    <div class="container">
-        <h1>AlphaZero<br>GOMOKU</h1>
-        
-        <div class="game-info">
-            <div class="status" id="status">PRESS START</div>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="status-card">
+                <div class="status-label">游戏状态</div>
+                <div class="status" id="status">点击开始游戏</div>
+            </div>
+            
             <div class="controls">
-                <button id="startBtn" class="btn">START</button>
-                <button id="resetBtn" class="btn">RESET</button>
-                <button id="undoBtn" class="btn">UNDO</button>
+                <button id="startBtn" class="btn btn-primary">
+                    <span class="btn-icon">▶</span>
+                    开始游戏
+                </button>
+                <button id="resetBtn" class="btn btn-secondary">
+                    <span class="btn-icon">↻</span>
+                    重新开始
+                </button>
+                <button id="undoBtn" class="btn btn-secondary">
+                    <span class="btn-icon">↩</span>
+                    悔棋
+                </button>
             </div>
-            <div class="settings">
-                <label>
-                    LEVEL:
+            
+            <div class="settings-card">
+                <h3>游戏设置</h3>
+                <div class="setting-item">
+                    <label for="aiLevel">难度等级</label>
                     <select id="aiLevel">
-                        <option value="100">EASY</option>
-                        <option value="400" selected>NORMAL</option>
-                        <option value="800">HARD</option>
-                        <option value="1600">MASTER</option>
+                        <option value="50">简单</option>
+                        <option value="100" selected>普通</option>
+                        <option value="200">困难</option>
+                        <option value="400">大师</option>
                     </select>
-                </label>
-                <label class="checkbox-wrapper">
-                    <input type="checkbox" id="aiFirst" />
-                    <span class="checkmark"></span>
-                    AI FIRST
-                </label>
+                </div>
+                <div class="setting-item">
+                    <label class="toggle-label">
+                        <span>AI 先手</span>
+                        <div class="toggle-wrapper">
+                            <input type="checkbox" id="aiFirst" />
+                            <span class="toggle-switch"></span>
+                        </div>
+                    </label>
+                </div>
             </div>
-        </div>
-
-        <div id="loading" class="loading" style="display: none;">
-            <div class="loading-text">LOADING SYSTEM...</div>
-        </div>
-
-        <div class="board-wrapper">
-            <canvas id="board" width="600" height="600"></canvas>
-        </div>
-
-        <div class="info-panel">
-            <div class="thinking" id="thinking" style="display: none;">
-                <span>AI IS THINKING<span class="dots">...</span></span>
+            
+            <div class="history-card">
+                <h3>对局记录</h3>
+                <div id="history" class="history-list"></div>
             </div>
-            <div class="moves-history">
-                <h3>BATTLE LOG</h3>
-                <div id="history"></div>
+        </aside>
+        
+        <main class="game-area">
+            <div id="loading" class="loading-overlay" style="display: none;">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">系统加载中...</div>
             </div>
-        </div>
+            
+            <div class="board-container">
+                <canvas id="board" width="600" height="600"></canvas>
+            </div>
+            
+            <div class="thinking-indicator" id="thinking" style="display: none;">
+                <div class="thinking-pulse"></div>
+                <span>AI 思考中...</span>
+            </div>
+        </main>
     </div>
 
     <div id="root"></div>

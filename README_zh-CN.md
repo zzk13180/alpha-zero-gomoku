@@ -87,6 +87,39 @@ python -m scripts.evaluate_models model_fast_50.pth model_fast_final.pth
 *   `-p`: MCTS 模拟次数（默认为 400）
 *   `-s`: 棋盘尺寸（默认为 9）
 
+### 4. 导出 ONNX 模型
+
+将训练好的 PyTorch 模型导出为 ONNX 格式，以便在 Web 端使用。
+
+```bash
+# 导出 fast 模式模型 (9x9) 到 public/model_fast.onnx
+python -m scripts.export_onnx
+
+# 导出 full 模式模型 (15x15) 到 public/model_full.onnx
+python -m scripts.export_onnx --mode full
+
+# 指定自定义模型文件
+python -m scripts.export_onnx --mode fast --model model_fast_100.pth
+```
+
+### 5. Web 界面
+
+使用 ONNX Runtime Web 直接在浏览器中与 AI 对战。
+
+**前置条件**：Node.js 和 npm (或 pnpm)。
+
+1. **安装依赖**：
+   ```bash
+   npm install
+   # 或
+   pnpm install
+   ```
+2. **启动开发服务器**：
+   ```bash
+   npm run dev
+   ```
+3. 打开终端显示的链接（通常是 `http://localhost:5173`）即可开始游戏。
+
 ## 项目结构
 
 ```
@@ -101,7 +134,10 @@ alpha-zero-gomoku/
 ├── scripts/               # 执行脚本
 │   ├── train.py           # 训练入口
 │   ├── human_play.py      # 对战入口
-│   └── evaluate_models.py # 模型评估对比
+│   ├── evaluate_models.py # 模型评估对比
+│   └── export_onnx.py     # 导出 ONNX 模型
+├── src/                   # Web 前端源码
+├── public/                # Web 静态资源
 ├── outputs/               # 训练输出目录（自动生成）
 │   └── *.pth              # 保存的模型文件
 ├── pyproject.toml         # 项目配置 + Ruff 代码规范

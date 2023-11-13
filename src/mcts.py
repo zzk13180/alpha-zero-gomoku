@@ -1,8 +1,5 @@
-import json
-
 import js
 import numpy as np
-from js import console
 
 
 class Board:
