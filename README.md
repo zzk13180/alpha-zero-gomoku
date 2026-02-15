@@ -51,7 +51,7 @@ python -m scripts.train --mode fast --model outputs/model_fast_100.pth
 | Parameter | Fast Mode | Full Mode |
 |---|---|---|
 | Board Size | 9×9 | 15×15 |
-| MCTS Simulations | 400 | 400 |
+| MCTS Simulations | 600 | 600 |
 | Training Episodes | 500 | 1500 |
 | Batch Size | 512 | 512 |
 | Buffer Size | 10000 | 10000 |
@@ -104,21 +104,25 @@ python -m scripts.export_onnx --mode fast --model model_fast_100.pth
 
 ### 5. Web Interface
 
-Play against the AI directly in your browser using ONNX Runtime Web.
+Play against the AI directly in your browser (9×9 board only). Uses pure JavaScript MCTS + ONNX Runtime Web (loaded from CDN), no Pyodide needed.
 
-**Prerequisites**: Node.js and npm (or pnpm).
+**Prerequisites**: Node.js and npm (or pnpm). A trained model exported to `public/model_fast.onnx`.
 
-1. **Install dependencies**:
+1. **Export model** (if not done yet):
+   ```bash
+   python -m scripts.export_onnx
+   ```
+2. **Install dependencies**:
    ```bash
    npm install
    # or
    pnpm install
    ```
-2. **Start the development server**:
+3. **Start the development server**:
    ```bash
    npm run dev
    ```
-3. Open the link shown in the terminal (usually `http://localhost:5173`) to start playing.
+4. Open the link shown in the terminal (usually `http://localhost:5173`) to start playing.
 
 ## Project Structure
 
@@ -129,14 +133,17 @@ alpha-zero-gomoku/
 │   ├── mcts.py            # MCTS implementation
 │   └── game_ui.py         # Game flow control
 ├── model/                 # Neural Network Models
-│   ├── net.py             # Policy-Value Network structure (CNN)
+│   ├── net.py             # Policy-Value Network (ResNet + BatchNorm)
 │   └── policy_value_net.py # Network interface wrapper
 ├── scripts/               # Execution scripts
 │   ├── train.py           # Training entry point
 │   ├── human_play.py      # Human vs AI entry point
 │   ├── evaluate_models.py # Model evaluation
 │   └── export_onnx.py     # Export model to ONNX
-├── src/                   # Web frontend source
+├── src/                   # Web frontend (pure JS, no Pyodide)
+│   ├── board.js           # Board logic (JS)
+│   ├── mcts.js            # MCTS + AI player (JS)
+│   └── game.js            # Game UI + ONNX integration
 ├── public/                # Web static assets
 ├── outputs/               # Training outputs (auto-generated)
 │   └── *.pth              # Saved model files
@@ -166,13 +173,16 @@ Input (4, H, W)
     └─ Channel 3: Player color (Start=1, Second=0)
          │
          ▼
-   Shared Conv Layers (Conv+ReLU) × 3
-   [4→32→64→128 Filters]
+   Conv3×3 + BN + ReLU (4→64)
+         │
+         ▼
+   ResBlock × 3 (64 filters)
+   [Conv-BN-ReLU-Conv-BN + Skip]
          │
     ┌────┴────┐
     ▼         ▼
  Policy Head   Value Head
- Conv 1×1      Conv 1×1
+ Conv 1×1+BN   Conv 1×1+BN
     │            │
     ▼            ▼
  Softmax        Tanh
@@ -182,7 +192,7 @@ Input (4, H, W)
  (H×W)          [-1, 1]
 ```
 
-> **Note**: Current implementation does not use BatchNorm. Experiments show simple network structures are more stable for small-scale self-play.
+> Uses **ResNet + BatchNorm** for stable training and strong feature extraction even on small boards.
 
 ### Training Process
 
@@ -190,6 +200,7 @@ Input (4, H, W)
    - Play games using MCTS + current network.
    - Collect data $(s, \pi, z)$: State, MCTS probabilities, Game result.
    - Add Dirichlet noise for exploration.
+   - Temperature annealing: high temperature (exploration) for early moves, low temperature (exploitation) for later moves.
 
 2. **Data Augmentation**
    - Exploit board symmetry to expand data 8x.

@@ -51,7 +51,7 @@ python -m scripts.train --mode fast --model outputs/model_fast_100.pth
 | 参数 | fast 模式 | full 模式 |
 |------|-----------|-----------|
 | 棋盘大小 | 9×9 | 15×15 |
-| MCTS 模拟次数 | 400 | 400 |
+| MCTS 模拟次数 | 600 | 600 |
 | 训练局数 | 500 | 1500 |
 | 批量大小 | 512 | 512 |
 | 缓冲区大小 | 10000 | 10000 |
@@ -104,21 +104,25 @@ python -m scripts.export_onnx --mode fast --model model_fast_100.pth
 
 ### 5. Web 界面
 
-使用 ONNX Runtime Web 直接在浏览器中与 AI 对战。
+在浏览器中与 AI 对战（仅支持 9×9 棋盘）。使用纯 JavaScript MCTS + ONNX Runtime Web（CDN 加载），无需 Pyodide。
 
-**前置条件**：Node.js 和 npm (或 pnpm)。
+**前置条件**：Node.js 和 npm (或 pnpm)。需先将训练模型导出到 `public/model_fast.onnx`。
 
-1. **安装依赖**：
+1. **导出模型**（如果尚未导出）：
+   ```bash
+   python -m scripts.export_onnx
+   ```
+2. **安装依赖**：
    ```bash
    npm install
    # 或
    pnpm install
    ```
-2. **启动开发服务器**：
+3. **启动开发服务器**：
    ```bash
    npm run dev
    ```
-3. 打开终端显示的链接（通常是 `http://localhost:5173`）即可开始游戏。
+4. 打开终端显示的链接（通常是 `http://localhost:5173`）即可开始游戏。
 
 ## 项目结构
 
@@ -129,14 +133,17 @@ alpha-zero-gomoku/
 │   ├── mcts.py            # 蒙特卡洛树搜索实现
 │   └── game_ui.py         # 游戏流程控制
 ├── model/                 # 神经网络模型
-│   ├── net.py             # 策略价值网络结构 (CNN)
+│   ├── net.py             # 策略价值网络结构 (ResNet + BatchNorm)
 │   └── policy_value_net.py # 网络接口封装
 ├── scripts/               # 执行脚本
 │   ├── train.py           # 训练入口
 │   ├── human_play.py      # 对战入口
-│   ├── evaluate_models.py # 模型评估对比
+│   ├── evaluate_models.py # 模型评伌对比
 │   └── export_onnx.py     # 导出 ONNX 模型
-├── src/                   # Web 前端源码
+├── src/                   # Web 前端源码 (纯 JS, 无 Pyodide)
+│   ├── board.js           # 棋盘逻辑 (JS)
+│   ├── mcts.js            # MCTS + AI 玩家 (JS)
+│   └── game.js            # 游戏 UI + ONNX 集成
 ├── public/                # Web 静态资源
 ├── outputs/               # 训练输出目录（自动生成）
 │   └── *.pth              # 保存的模型文件
@@ -166,13 +173,16 @@ AlphaZero 将 **MCTS** 与 **深度神经网络** 结合：
     └─ 通道 3: 先手标记 (先手=1, 后手=0)
          │
          ▼
-   共享卷积层 (Conv+ReLU) × 3
-   [4→32→64→128 通道]
+   Conv3×3 + BN + ReLU (4→64)
+         │
+         ▼
+   残差块 × 3 (64 通道)
+   [Conv-BN-ReLU-Conv-BN + 跳连接]
          │
     ┌────┴────┐
     ▼         ▼
  策略头      价值头
- Conv 1×1   Conv 1×1
+ Conv 1×1+BN   Conv 1×1+BN
     │         │
     ▼         ▼
  Softmax    Tanh
@@ -182,7 +192,7 @@ AlphaZero 将 **MCTS** 与 **深度神经网络** 结合：
  (H×W)     [-1, 1]
 ```
 
-> **注意**：当前实现未使用 BatchNorm，实测表明在小规模自我对弈场景下，简单网络结构更稳定。
+> 使用 **ResNet + BatchNorm** 架构，在小棋盘上也能稳定训练并提取有效特征。
 
 ### 训练流程
 
@@ -190,6 +200,7 @@ AlphaZero 将 **MCTS** 与 **深度神经网络** 结合：
    - 使用 MCTS + 当前网络进行对弈
    - 收集数据 $(s, \pi, z)$：状态、MCTS 概率、胜负结果
    - 添加 Dirichlet 噪声增加探索
+   - 温度退火：前期高温度鼓励探索，后期低温度精确落子
 
 2. **数据增强**
    - 利用棋盘对称性，将每局数据扩充 8 倍

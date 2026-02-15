@@ -37,13 +37,15 @@ class PolicyValueNetWrapper:
             log_probs, value = self.net(state_tensor)
             probs = np.exp(log_probs.numpy().flatten())
 
-        # 获取合法动作的概率并归一化
-        # legal_probs = probs[legal_positions]
-        # if legal_probs.sum() > 0:
-        #     legal_probs = legal_probs / legal_probs.sum()
-        # action_probs = zip(legal_positions, legal_probs, strict=True)
-
-        action_probs = zip(legal_positions, probs[legal_positions], strict=True)
+        # 获取合法动作的概率并归一化（关键：避免概率泄漏到非法位置）
+        legal_probs = probs[legal_positions]
+        prob_sum = legal_probs.sum()
+        if prob_sum > 0:
+            legal_probs = legal_probs / prob_sum
+        else:
+            # 网络输出异常时退化为均匀分布
+            legal_probs = np.ones(len(legal_positions)) / len(legal_positions)
+        action_probs = zip(legal_positions, legal_probs, strict=True)
         return action_probs, value.item()
 
     def train_step(self, state_batch, mcts_probs, winner_batch, lr):

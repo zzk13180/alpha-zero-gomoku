@@ -31,24 +31,24 @@ from model import PolicyValueNet
 # ===== 训练模式配置 =====
 TRAIN_CONFIGS = {
     "fast": {
-        # 快速模式：小棋盘，快速验证
+        # 快速模式：小棋盘，高质量自对弈
         "board_width": 9,
         "board_height": 9,
         "n_in_row": 5,
-        "n_playout": 400,  # MCTS模拟次数，提升走棋质量
+        "n_playout": 600,  # 增加MCTS模拟次数，提升走棋质量
         "buffer_size": 10000,  # 缓冲区，避免过快遗忘
         "batch_size": 512,  # 批量
         "epochs": 5,  # 训练轮数
         "game_batch_num": 500,  # 训练局数，确保收敛
         "check_freq": 50,  # 保存频率
-        "description": "快速模式 (9x9棋盘, 参数优化版, 约30-60分钟)",
+        "description": "快速模式 (9x9棋盘, ResNet+BN, 约30-60分钟)",
     },
     "full": {
         # 完整模式：标准棋盘，充分训练
         "board_width": 15,
         "board_height": 15,
         "n_in_row": 5,
-        "n_playout": 400,  # 标准MCTS模拟次数
+        "n_playout": 600,  # 标准MCTS模拟次数
         "buffer_size": 10000,  # 大缓冲区
         "batch_size": 512,  # 大批量
         "epochs": 5,  # 更多训练轮数

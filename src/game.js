@@ -1,42 +1,28 @@
 import './style.css';
-import mctsCode from './mcts.py?raw';
+import { Board } from './board.js';
+import { AlphaZeroPlayer } from './mcts.js';
 
-function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) {
-            resolve();
-            return;
-        }
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
-}
+const BOARD_SIZE = 9;
+const CELL_SIZE = 44;
 
 class GomokuGame {
     constructor() {
-        // 默认棋盘大小，会根据加载的模型动态调整
-        this.boardSize = 15;
-        this.cellSize = 40;
-        this.board = [];
+        this.boardSize = BOARD_SIZE;
+        this.cellSize = CELL_SIZE;
+        this.board = null;       // Board 实例（JS）
+        this.uiBoard = [];       // 二维数组用于绘制
         this.history = [];
-        this.currentPlayer = 1; // 1: PLAYER(BLK), 2: AI(WHT)
+        this.currentPlayer = 1;  // 1: 玩家(黑), 2: AI(白)
         this.gameStarted = false;
         this.aiThinking = false;
-        this.pyodideReady = false;
-        this.ortSession = null;
-        this.modelMode = null; // 'full' or 'fast'
-        this.playerPiece = 1; // 玩家在 Python 端的棋子编号（1=先手黑，2=后手白）
-        
+        this.ai = null;          // AlphaZeroPlayer 实例
+        this.playerPiece = 1;
+
         this.canvas = document.getElementById('board');
         this.ctx = this.canvas.getContext('2d');
-        
-        // 调整画布大小
         this.canvas.width = this.cellSize * (this.boardSize + 1);
         this.canvas.height = this.cellSize * (this.boardSize + 1);
-        
+
         this.initBoard();
         this.drawBoard();
         this.setupEventListeners();
@@ -44,110 +30,61 @@ class GomokuGame {
     }
 
     initBoard() {
-        this.board = Array(this.boardSize).fill(null).map(() => 
+        this.uiBoard = Array(this.boardSize).fill(null).map(() =>
             Array(this.boardSize).fill(0)
         );
         this.history = [];
         this.currentPlayer = 1;
+        if (this.board) {
+            this.board.init();
+        }
     }
 
     setupEventListeners() {
-        const startBtn = document.getElementById('startBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const undoBtn = document.getElementById('undoBtn');
-        const aiLevel = document.getElementById('aiLevel');
-        
-        startBtn.addEventListener('click', () => this.startGame());
-        resetBtn.addEventListener('click', () => this.resetGame());
-        undoBtn.addEventListener('click', () => this.undoMove());
-        
-        // 监听难度变化
-        aiLevel.addEventListener('change', async (e) => {
-            if (this.pyodideReady) {
-                const level = e.target.value;
-                await pyodide.runPythonAsync(`set_ai_level(${level})`);
+        document.getElementById('startBtn').addEventListener('click', () => this.startGame());
+        document.getElementById('resetBtn').addEventListener('click', () => this.resetGame());
+        document.getElementById('undoBtn').addEventListener('click', () => this.undoMove());
+
+        document.getElementById('aiLevel').addEventListener('change', (e) => {
+            if (this.ai) {
+                this.ai.setNPlayout(parseInt(e.target.value));
             }
         });
-        
+
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
     }
 
     async initEngine() {
         const loadingDiv = document.getElementById('loading');
         const statusDiv = document.getElementById('status');
-        
+
         loadingDiv.style.display = 'block';
-        
+
         try {
-            // 1. 初始化 Pyodide 和 ONNX Runtime
-            // 为了保证全局变量存在，这里手动加载 CDN (Vite 开发环境下)
-            statusDiv.textContent = '加载程序库...';
-            // 检查全局变量是否已存在
-            if (!window.loadPyodide) {
-                await loadScript('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
-            }
+            statusDiv.textContent = '加载 ONNX Runtime...';
+
+            // 动态加载 ONNX Runtime Web (CDN)
             if (!window.ort) {
-                await loadScript('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
             }
 
-            statusDiv.textContent = '系统初始化中...';
-            window.pyodide = await loadPyodide({
-                indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
-            });
-            
-            statusDiv.textContent = '安装依赖项...';
-            await pyodide.loadPackage(['numpy', 'micropip']);
-            
-            // 2. 加载 ONNX 模型
-            statusDiv.textContent = '加载神经网络...';
-            // 注意：Vite 把 public 下的文件直接放在根路径
-            // 默认加载 fast 模式 (9x9)，这是演示主要使用的模型
-            try {
-                this.ortSession = await ort.InferenceSession.create('model_fast.onnx');
-                this.boardSize = 9;
-                this.modelMode = 'fast';
-                console.log('Loaded fast model (9x9)');
-            } catch (e) {
-                console.log('Fast model not found, trying full model...');
-                this.ortSession = await ort.InferenceSession.create('model_full.onnx');
-                this.boardSize = 15;
-                this.modelMode = 'full';
-                console.log('Loaded full model (15x15)');
-            }
-            
-            // 根据加载的模型调整画布大小
-            this.canvas.width = this.cellSize * (this.boardSize + 1);
-            this.canvas.height = this.cellSize * (this.boardSize + 1);
-            this.initBoard();
-            this.drawBoard();
-            
-            // 3. 暴露预测函数给 Python
-            const boardSize = this.boardSize;
-            window.predict = async (flatData) => {
-                let inputData;
-                if (flatData.toJs) {
-                    inputData = flatData.toJs();
-                } else {
-                    inputData = flatData;
-                }
-                
-                const tensor = new ort.Tensor('float32', inputData, [1, 4, boardSize, boardSize]);
-                const feeds = { input: tensor };
-                
-                const results = await this.ortSession.run(feeds);
-                
-                // 返回 [log_probs, value]
-                return [results.log_probs.data, results.value.data[0]];
-            };
+            statusDiv.textContent = '加载神经网络模型...';
+            const session = await ort.InferenceSession.create('model_fast.onnx');
 
-            statusDiv.textContent = '编译游戏逻辑...';
-            await this.loadPythonCode();
-            
-            this.pyodideReady = true;
+            statusDiv.textContent = '初始化 AI...';
+            const nPlayout = parseInt(document.getElementById('aiLevel').value);
+            this.ai = new AlphaZeroPlayer(session, this.boardSize, nPlayout);
+            this.board = new Board(this.boardSize, 5);
+
             loadingDiv.style.display = 'none';
             statusDiv.textContent = '就绪！点击开始游戏';
             document.getElementById('startBtn').disabled = false;
-            
         } catch (error) {
             console.error('初始化失败:', error);
             statusDiv.textContent = '初始化失败: ' + error.message;
@@ -155,37 +92,24 @@ class GomokuGame {
         }
     }
 
-    async loadPythonCode() {
-        // 加载 AlphaZero MCTS Python 代码
-        // 直接运行导入的字符串，无需担心缩进问题，因为原始文件是干净的
-        await pyodide.runPythonAsync(mctsCode);
-        console.log('Python AlphaZero 代码加载完成');
-    }
-
-    async startGame() {
-        if (!this.pyodideReady) {
-            alert('系统尚未就绪');
-            return;
-        }
-
+    startGame() {
+        if (!this.ai) { alert('系统尚未就绪'); return; }
         this.resetGame();
         this.gameStarted = true;
         document.getElementById('startBtn').disabled = true;
-        
-        // 初始化游戏，传入参数
-        const aiLevel = document.getElementById('aiLevel').value;
-        await pyodide.runPythonAsync(`init_game(width=${this.boardSize}, height=${this.boardSize}, n_playout=${aiLevel})`);
-        
+
+        const nPlayout = parseInt(document.getElementById('aiLevel').value);
+        this.ai.setNPlayout(nPlayout);
+        this.ai.reset();
+        this.board.init();
+
         const aiFirst = document.getElementById('aiFirst').checked;
-        
         if (aiFirst) {
-            // AI 先手：AI 是 Python 端的 player 1，玩家是 player 2
             this.playerPiece = 2;
             this.currentPlayer = 2;
             this.updateStatus('AI 回合（黑棋）');
-            setTimeout(() => this.aiMove(), 500);
+            setTimeout(() => this.aiMove(), 300);
         } else {
-            // 玩家先手：玩家是 Python 端的 player 1，AI 是 player 2
             this.playerPiece = 1;
             this.currentPlayer = 1;
             this.updateStatus('你的回合（黑棋）');
@@ -204,9 +128,7 @@ class GomokuGame {
     }
 
     handleClick(e) {
-        if (!this.gameStarted || this.aiThinking || this.currentPlayer !== 1) {
-            return;
-        }
+        if (!this.gameStarted || this.aiThinking || this.currentPlayer !== 1) return;
 
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -216,34 +138,34 @@ class GomokuGame {
         const row = Math.round((y - this.cellSize) / this.cellSize);
 
         if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
-            if (this.board[row][col] === 0) {
+            if (this.uiBoard[row][col] === 0) {
                 this.makeMove(row, col, 1);
             }
         }
     }
 
-    async makeMove(row, col, player) {
+    makeMove(row, col, player) {
         const move = row * this.boardSize + col;
-        
-        this.board[row][col] = player;
+
+        this.uiBoard[row][col] = player;
         this.history.push({ row, col, player });
-        
-        await pyodide.runPythonAsync(`make_move(${move})`);
-        
+
+        // 同步更新 JS 棋盘
+        this.board.doMove(move);
+        if (this.ai) {
+            this.ai.observeOpponentMove(move);
+        }
+
         this.drawBoard();
         this.addMoveToHistory(row, col, player);
 
-        const result = await pyodide.runPythonAsync('check_game_end()');
-        const gameEnd = result.toJs()[0];
-        const winner = result.toJs()[1];
-
+        const [gameEnd, winner] = this.board.gameEnd();
         if (gameEnd) {
             this.handleGameEnd(winner);
             return;
         }
 
         this.currentPlayer = player === 1 ? 2 : 1;
-
         if (this.currentPlayer === 2) {
             setTimeout(() => this.aiMove(), 100);
         } else {
@@ -258,19 +180,36 @@ class GomokuGame {
         this.canvas.classList.add('disabled');
 
         try {
-            const move = await pyodide.runPythonAsync('await get_ai_move()');
-            
-            if (move !== null && move !== undefined && move !== -1) {
+            // 让 UI 有时间渲染 "思考中" 状态
+            await new Promise(r => setTimeout(r, 50));
+            const move = await this.ai.getAction(this.board);
+
+            if (move >= 0) {
                 const row = Math.floor(move / this.boardSize);
                 const col = move % this.boardSize;
-                
-                await this.makeMove(row, col, 2);
+
+                this.uiBoard[row][col] = 2;
+                this.history.push({ row, col, player: 2 });
+                // AI 自己的 observeOpponentMove 已在 getAction 中处理
+                // 但需要同步棋盘状态（board.doMove 保持一致）
+                // board 状态由 AI 内部的 copy 不修改，需要手动推进
+                this.board.doMove(move);
+
+                this.drawBoard();
+                this.addMoveToHistory(row, col, 2);
+
+                const [gameEnd, winner] = this.board.gameEnd();
+                if (gameEnd) {
+                    this.handleGameEnd(winner);
+                    return;
+                }
+                this.currentPlayer = 1;
+                this.updateStatus('你的回合（黑棋）');
             } else {
-                console.error("AI returned invalid move:", move);
                 this.updateStatus('AI 出错');
             }
         } catch (error) {
-            console.error('AI Move failed:', error);
+            console.error('AI 出错:', error);
             this.updateStatus('系统错误');
         } finally {
             this.aiThinking = false;
@@ -282,9 +221,7 @@ class GomokuGame {
     handleGameEnd(winner) {
         this.gameStarted = false;
         document.getElementById('startBtn').disabled = false;
-        
-        // winner 是 Python 端返回的玩家编号 (1 或 2)
-        // 需要根据 playerPiece 来判断是玩家还是 AI 获胜
+
         if (winner === this.playerPiece) {
             this.updateStatus('🎉 恭喜你获胜！');
         } else if (winner === -1) {
@@ -295,23 +232,23 @@ class GomokuGame {
     }
 
     undoMove() {
-        if (!this.gameStarted || this.aiThinking || this.history.length < 2) {
-            return;
-        }
+        if (!this.gameStarted || this.aiThinking || this.history.length < 2) return;
 
+        // 撤回两步（玩家 + AI）
         for (let i = 0; i < 2; i++) {
             if (this.history.length > 0) {
-                const lastMove = this.history.pop();
-                this.board[lastMove.row][lastMove.col] = 0;
+                const last = this.history.pop();
+                this.uiBoard[last.row][last.col] = 0;
             }
         }
 
-        // 使用我们在 Python 端定义的函数
-        const historyJson = JSON.stringify(this.history);
-        pyodide.runPythonAsync(`
-import json
-restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, height=${this.boardSize})
-        `);
+        // 从头重建棋盘状态
+        this.board.init();
+        this.ai.reset();
+        for (const { row, col } of this.history) {
+            const move = row * this.boardSize + col;
+            this.board.doMove(move);
+        }
 
         this.drawBoard();
         this.updateHistory();
@@ -319,10 +256,12 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
         this.updateStatus('你的回合（黑棋）');
     }
 
+    // ==================== 绘制 ====================
+
     drawBoard() {
         const ctx = this.ctx;
         const size = this.cellSize;
-        
+
         ctx.fillStyle = '#dcb35c';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -335,31 +274,23 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
             ctx.moveTo(size, size * (i + 1));
             ctx.lineTo(size * this.boardSize, size * (i + 1));
             ctx.stroke();
-
             ctx.beginPath();
             ctx.moveTo(size * (i + 1), size);
             ctx.lineTo(size * (i + 1), size * this.boardSize);
             ctx.stroke();
         }
 
-        let starPoints = [];
-        if (this.boardSize === 15) {
-            starPoints = [[3, 3], [3, 11], [7, 7], [11, 3], [11, 11]];
-        } else if (this.boardSize === 9) {
-            starPoints = [[2, 2], [2, 6], [4, 4], [6, 2], [6, 6]];
-        }
-        
+        // 星位
+        const starPoints = [[2, 2], [2, 6], [4, 4], [6, 2], [6, 6]];
         ctx.fillStyle = '#2c3e50';
-        starPoints.forEach(([row, col]) => {
-            const x = size * (col + 1) - 4;
-            const y = size * (row + 1) - 4;
-            ctx.fillRect(x, y, 8, 8);
-        });
+        for (const [row, col] of starPoints) {
+            ctx.fillRect(size * (col + 1) - 4, size * (row + 1) - 4, 8, 8);
+        }
 
         for (let row = 0; row < this.boardSize; row++) {
             for (let col = 0; col < this.boardSize; col++) {
-                if (this.board[row][col] !== 0) {
-                    this.drawPiece(row, col, this.board[row][col]);
+                if (this.uiBoard[row][col] !== 0) {
+                    this.drawPiece(row, col, this.uiBoard[row][col]);
                 }
             }
         }
@@ -368,9 +299,11 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
             const last = this.history[this.history.length - 1];
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 3;
-            const x = size * (last.col + 1);
-            const y = size * (last.row + 1);
-            ctx.strokeRect(x - 5, y - 5, 10, 10);
+            ctx.strokeRect(
+                size * (last.col + 1) - 5,
+                size * (last.row + 1) - 5,
+                10, 10
+            );
         }
     }
 
@@ -383,12 +316,12 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
 
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, 2 * Math.PI);
-        
+
         if (player === 1) {
             ctx.fillStyle = '#2c3e50';
             ctx.fill();
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(x - radius/2, y - radius/2, radius/2, radius/2);
+            ctx.fillRect(x - radius / 2, y - radius / 2, radius / 2, radius / 2);
         } else {
             ctx.fillStyle = '#ecf0f1';
             ctx.fill();
@@ -407,11 +340,10 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
         const moveNum = this.history.length;
         const playerName = player === 1 ? '玩家' : 'AI';
         const color = player === 1 ? '黑' : '白';
-        
+
         const moveItem = document.createElement('div');
         moveItem.className = `move-item ${player === 1 ? 'player' : 'ai'}`;
         moveItem.textContent = `第${moveNum}步 ${playerName}(${color}): (${row}, ${col})`;
-        
         history.appendChild(moveItem);
         history.scrollTop = history.scrollHeight;
     }
@@ -419,15 +351,12 @@ restore_from_history(json.loads('${historyJson}'), width=${this.boardSize}, heig
     updateHistory() {
         const history = document.getElementById('history');
         history.innerHTML = '';
-        
         this.history.forEach((move, index) => {
             const playerName = move.player === 1 ? '玩家' : 'AI';
             const color = move.player === 1 ? '黑' : '白';
-            
             const moveItem = document.createElement('div');
             moveItem.className = `move-item ${move.player === 1 ? 'player' : 'ai'}`;
             moveItem.textContent = `第${index + 1}步 ${playerName}(${color}): (${move.row}, ${move.col})`;
-            
             history.appendChild(moveItem);
         });
     }
